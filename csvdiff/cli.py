@@ -114,36 +114,27 @@ def run(argv: list[str] | None = None) -> int:
             ignore_columns=args.ignore or [],
         )
     except ValueError as exc:
+        # Raised for issues like missing key columns in the CSV headers
         print(f"csvdiff: error: {exc}", file=sys.stderr)
         return 2
     except OSError as exc:
         print(f"csvdiff: error reading file: {exc}", file=sys.stderr)
         return 2
 
-    formatted = format_result(
+    output_text = format_result(
         result,
         fmt=args.format,
         color=not args.no_color,
-        show_summary=not args.quiet,
+        quiet=args.quiet,
     )
 
-    if args.output:
+    if args.output is not None:
         try:
-            args.output.write_text(formatted, encoding="utf-8")
+            args.output.write_text(output_text, encoding="utf-8")
         except OSError as exc:
-            print(f"csvdiff: error writing output: {exc}", file=sys.stderr)
+            print(f"csvdiff: error writing output file: {exc}", file=sys.stderr)
             return 2
     else:
-        print(formatted, end="")
+        print(output_text, end="")
 
-    # Exit 1 when differences were found (useful for CI pipelines)
     return 1 if result.has_differences() else 0
-
-
-def main() -> None:
-    """Entry point for the installed console script."""
-    sys.exit(run())
-
-
-if __name__ == "__main__":
-    main()
