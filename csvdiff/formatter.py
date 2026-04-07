@@ -94,62 +94,45 @@ def format_json(result: DiffResult, show_unchanged: bool = False) -> str:
 
 
 def format_csv(result: DiffResult, show_unchanged: bool = False) -> str:
-    """Format diff result as a CSV file with a '_change_type' column prepended.
+    """Format diff result as CSV.
+
+    Each row in the output includes a '_change_type' column indicating whether
+    the row was added, removed, modified, or unchanged. Modified rows appear
+    twice: once with the old values and once with the new values, distinguished
+    by '_change_type' values of 'modified_old' and 'modified_new' respectively.
 
     Args:
         result: The diff result to format.
         show_unchanged: Whether to include unchanged rows in output.
 
     Returns:
-        A CSV string with change type annotations.
+        A CSV string representation of the diff.
     """
     output = io.StringIO()
-    writer = None
+
+    # Collect all field names from diffs to build a consistent header
+    fieldnames_seen: list = ["_change_type"]
+    for diff in result.diffs:
+        row = diff.new_row or diff.old_row or {}
+        for key in row:
+            if key not in fieldnames_seen:
+                fieldnames_seen.append(key)
+
+    writer = csv.DictWriter(output, fieldnames=fieldnames_seen, extrasaction="ignore")
+    writer.writeheader()
 
     for diff in result.diffs:
         if diff.change_type == ChangeType.UNCHANGED and not show_unchanged:
             continue
 
-        # Use new_row for added/modified/unchanged, old_row for removed
-        row_data = diff.new_row if diff.new_row is not None else diff.old_row
-        if row_data is None:
-            continue
-
-        annotated_row = {"_change_type": diff.change_type.value, **row_data}
-
-        if writer is None:
-            fieldnames = list(annotated_row.keys())
-            writer = csv.DictWriter(output, fieldnames=fieldnames)
-            writer.writeheader()
-
-        writer.writerow(annotated_row)
+        if diff.change_type == ChangeType.ADDED:
+            writer.writerow({"_change_type": "added", **(diff.new_row or {})})
+        elif diff.change_type == ChangeType.REMOVED:
+            writer.writerow({"_change_type": "removed", **(diff.old_row or {})})
+        elif diff.change_type == ChangeType.MODIFIED:
+            writer.writerow({"_change_type": "modified_old", **(diff.old_row or {})})
+            writer.writerow({"_change_type": "modified_new", **(diff.new_row or {})})
+        elif diff.change_type == ChangeType.UNCHANGED:
+            writer.writerow({"_change_type": "unchanged", **(diff.new_row or {})})
 
     return output.getvalue()
-
-
-FORMAT_HANDLERS = {
-    "text": format_text,
-    "json": format_json,
-    "csv": format_csv,
-}
-
-
-def format_result(result: DiffResult, fmt: str = "text", show_unchanged: bool = False) -> str:
-    """Dispatch to the appropriate formatter.
-
-    Args:
-        result: The diff result to format.
-        fmt: Output format name ('text', 'json', or 'csv').
-        show_unchanged: Whether to include unchanged rows in output.
-
-    Returns:
-        Formatted string output.
-
-    Raises:
-        ValueError: If the requested format is not supported.
-    """
-    handler = FORMAT_HANDLERS.get(fmt)
-    if handler is None:
-        supported = ", ".join(FORMAT_HANDLERS.keys())
-        raise ValueError(f"Unsupported format {fmt!r}. Choose from: {supported}")
-    return handler(result, show_unchanged=show_unchanged)
